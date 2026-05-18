@@ -54,7 +54,6 @@ export class RecentMessagesService {
 		const firstTsNum = firstTs === null ? null : Number(firstTs);
 		const result: string[] = [];
 
-		// Adds @historical=1 tag so Chatterino differentiates historical from live messages.
 		for (const message of body.split(/\r?\n/).toReversed().slice(1)) {
 			if (!message) continue;
 

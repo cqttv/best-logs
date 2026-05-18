@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { nameHistoryService } from '../utils/nameHistoryService.js';
 import { formatError, userChanRegex } from '../utils/helpers.js';
+import { AppError } from '../utils/errors.js';
 
 const nameHistoryInputRe = /^\d{1,20}$|^login:[a-z0-9]\w{0,24}$/i;
 
@@ -28,10 +29,7 @@ router.get('/namehistory/:user', async (req: Request, res: Response) => {
 		const result = await nameHistoryService.getNameHistory(user);
 		res.json(result);
 	} catch (error) {
-		const status =
-			error instanceof Error && 'status' in error && typeof (error as { status: unknown }).status === 'number'
-				? (error as { status: number }).status
-				: 500;
+		const status = error instanceof AppError ? error.status : 500;
 		res.status(status);
 		res.contentType('text/plain');
 		res.send(error instanceof Error ? error.message : formatError(error));

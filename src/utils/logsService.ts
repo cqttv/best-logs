@@ -5,6 +5,7 @@ import { instanceLoader } from './instanceLoader.js';
 import { infoService } from './infoService.js';
 import { InFlight } from './cache.js';
 import { CircuitBreaker } from './circuitBreaker.js';
+import { LookupNotFoundError } from './errors.js';
 import type { LogsResult, RequestInfo } from '../types/logs.js';
 import { InstanceStatus } from '../types/instance.js';
 import type { InstanceResult, LogsAvailabilityDate } from '../types/instance.js';
@@ -17,7 +18,7 @@ interface InstanceAccumulator {
 	list: LogsAvailabilityDate[];
 }
 
-const isNotFoundError = (e: unknown): boolean => e instanceof Error && e.message.startsWith('User not found:');
+const isNotFoundError = (error: unknown): boolean => error instanceof LookupNotFoundError;
 
 export class LogsService {
 	private readonly circuit = new CircuitBreaker({ name: 'Logs' });

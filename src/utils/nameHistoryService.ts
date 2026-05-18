@@ -2,6 +2,7 @@ import { request as httpRequest } from './request.js';
 import { USER_AGENT } from './helpers.js';
 import { config } from './config.js';
 import { infoService } from './infoService.js';
+import { AppError } from './errors.js';
 import { TTLCache, InFlight } from './cache.js';
 import type { NameHistoryEntry } from '../types/user.js';
 
@@ -20,11 +21,10 @@ export class NameHistoryService {
 
 	async getNameHistory(user: string): Promise<NameHistoryEntry[]> {
 		if (!user.startsWith('login:') && Number.isNaN(Number(user))) {
-			throw Object.assign(
-				new Error(
-					"The value must be an ID or use 'login:' to refer to usernames. Example: 754201843 or login:zonianmidian",
-				),
-				{ status: 400 },
+			throw new AppError(
+				"The value must be an ID or use 'login:' to refer to usernames. Example: 754201843 or login:zonianmidian",
+				400,
+				'invalid_name_history_input',
 			);
 		}
 
