@@ -57,7 +57,7 @@ export class LogsService {
 
 		let status = 200;
 		let downSites = 0;
-		let currentError: string | undefined = error;
+		let currentError: string | null = error ?? null;
 		const requestInfo: RequestInfo = {
 			channel: null,
 			user: null,

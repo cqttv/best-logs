@@ -99,10 +99,10 @@ export class RecentMessagesService {
 		if (instances.length === 0) {
 			return {
 				status: 503,
-				status_message: undefined,
+				status_message: null,
 				error: 'No recent-messages instances configured',
 				error_code: 'no_instances',
-				instance: undefined,
+				instance: null,
 				elapsed: elapsedFrom(start),
 				count: 0,
 				request: { channel, limit: limitNum },
@@ -113,11 +113,11 @@ export class RecentMessagesService {
 		let recentMessages: string[] = [];
 		let messages: string[] = [];
 
-		let statusMessage: string | undefined;
-		let errorCode: string | null | undefined;
-		let instance: string | undefined;
+		let statusMessage: string | null = null;
+		let errorCode: string | null = null;
+		let instance: string | null = null;
 		let status = 500;
-		let error: string | null | undefined;
+		let error: string | null = null;
 
 		const capturedErrors: { body: RecentMessagesBody; statusCode: number; entry: string }[] = [];
 
@@ -158,13 +158,13 @@ export class RecentMessagesService {
 				.filter((str) => !str.includes(':tmi.twitch.tv ROOMSTATE #'))
 				.slice(-limitNum);
 			messages = recentMessages;
-			statusMessage = body.status_message;
-			errorCode = body.error_code;
+			statusMessage = body.status_message ?? null;
+			errorCode = body.error_code ?? null;
 			error = body.error ?? null;
 			instance = `https://${entry}`;
 			status = statusCode;
 		} else if (lastRmError) {
-			statusMessage = lastRmError.body.status_message;
+			statusMessage = lastRmError.body.status_message ?? null;
 			instance = `https://${lastRmError.entry}`;
 			status = lastRmError.statusCode;
 			errorCode = lastRmError.body.error_code ?? 'internal_server_error';
