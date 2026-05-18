@@ -17,7 +17,9 @@ function sendError(res: Response, status: number, message: string): void {
 
 async function proxyToInstance(res: Response, targetUrl: string): Promise<void> {
 	const ac = new AbortController();
-	const timer = setTimeout(() => { ac.abort(new DOMException('Gateway timeout', 'TimeoutError')); }, 120_000);
+	const timer = setTimeout(() => {
+		ac.abort(new DOMException('Gateway timeout', 'TimeoutError'));
+	}, 120_000);
 
 	try {
 		const { body, statusCode, headers } = await fetchStream(targetUrl, {
