@@ -3,15 +3,6 @@ import type { Request, Response } from 'express';
 import { recentMessagesService } from '../utils/recentMessagesService.js';
 import { formatError, parseUsername } from '../utils/helpers.js';
 
-const ALLOWED_RM_PARAMS = new Set([
-	'limit',
-	'after',
-	'rm_only',
-	'hide_moderation_messages',
-	'hide_moderated_users',
-	'clearchat_to_notice',
-]);
-
 const router = Router();
 
 const getRecentMessages = async (req: Request, res: Response): Promise<void> => {
@@ -24,9 +15,7 @@ const getRecentMessages = async (req: Request, res: Response): Promise<void> => 
 
 	try {
 		const searchParams = Object.fromEntries(
-			Object.entries(req.query).filter(
-				(entry): entry is [string, string] => typeof entry[1] === 'string' && ALLOWED_RM_PARAMS.has(entry[0]),
-			),
+			Object.entries(req.query).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
 		);
 		const recentMessages = await recentMessagesService.getRecentMessages(channel, searchParams);
 

@@ -8,7 +8,7 @@ import type { RecentMessagesResult } from '../types/messages.js';
 import type { LogsAvailabilityDate } from '../types/instance.js';
 
 interface RecentMessagesBody {
-	messages: string[];
+	messages?: string[];
 	error?: string;
 	error_code?: string;
 	status_message?: string;
@@ -17,9 +17,14 @@ interface RecentMessagesBody {
 const TMI_SENT_REGEX = /tmi-sent-ts=(\d+)(;|\s:)/;
 
 export class RecentMessagesService {
-	private readonly inFlight = new InFlight<string, RecentMessagesResult>();
+	private readonly inFlight = new InFlight<string, RecentMessagesResult>(5000);
 
-	async fetchMessages(instance: string, channel: string, searchParams: Record<string, string>): Promise<HttpResponse> {
+	async fetchMessages(
+		instance: string,
+		channel: string,
+		searchParams: Record<string, string>,
+		signal?: AbortSignal,
+	): Promise<HttpResponse> {
 		const url = new URL(`https://${instance}/api/v2/recent-messages/${channel}`);
 		for (const [key, value] of Object.entries(searchParams)) {
 			url.searchParams.set(key, value);
@@ -27,6 +32,7 @@ export class RecentMessagesService {
 		return httpRequest(url.toString(), {
 			headers: { 'User-Agent': USER_AGENT },
 			timeout: 5000,
+			...(signal === undefined ? {} : { signal }),
 		});
 	}
 
@@ -110,9 +116,15 @@ export class RecentMessagesService {
 
 		const capturedErrors: { body: RecentMessagesBody; statusCode: number; entry: string }[] = [];
 
+		const rmController = new AbortController();
 		const rmWinner = await Promise.any(
 			instances.map(async (entry) => {
-				const { body: rawBody, statusCode } = await this.fetchMessages(entry, channel, upstreamParams);
+				const { body: rawBody, statusCode } = await this.fetchMessages(
+					entry,
+					channel,
+					upstreamParams,
+					rmController.signal,
+				);
 				let body: RecentMessagesBody;
 				try {
 					body = JSON.parse(rawBody) as RecentMessagesBody;
@@ -120,7 +132,8 @@ export class RecentMessagesService {
 					capturedErrors.push({ entry, body: { messages: [] }, statusCode });
 					throw new Error('Invalid JSON response');
 				}
-				if (statusCode === 200 && body.messages.length > 0) {
+				if (statusCode === 200 && Array.isArray(body.messages) && body.messages.length > 0) {
+					rmController.abort();
 					console.log(
 						`[${entry}] Channel: ${channel} | ${String(statusCode)} - ${String(body.messages.length)} messages`,
 					);
@@ -136,7 +149,7 @@ export class RecentMessagesService {
 
 		if (rmWinner) {
 			const { entry, body, statusCode } = rmWinner;
-			recentMessages = body.messages.filter((str) => !str.includes(':tmi.twitch.tv ROOMSTATE #')).slice(-limitNum);
+			recentMessages = (body.messages ?? []).filter((str) => !str.includes(':tmi.twitch.tv ROOMSTATE #')).slice(-limitNum);
 			messages = recentMessages;
 			statusMessage = body.status_message;
 			errorCode = body.error_code;

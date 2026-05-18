@@ -84,30 +84,25 @@ async function readConfig(): Promise<StaticConfig> {
 
 function pageHead(title: string, description: string, image = `${assetBaseUrl}/DankG.png`): string {
 	return `<head>
+	<meta name="viewport" content="width=device-width, initial-scale=0.6" />
+	<meta property="og:url" content="${baseUrl}/" />
+	<meta name="keywords" content="twitch, chat, logs" />
+	<meta property="og:type" content="website" />
+	<meta name="application-name" content="Best Logs" />
 	<title>${escapeHtml(title)}</title>
 	<meta name="description" content="${escapeHtml(description)}" />
 	<meta property="og:title" content="${escapeHtml(title)}" />
 	<meta property="og:image" content="${escapeHtml(image)}" />
 	<meta property="og:description" content="${escapeHtml(description)}" />
+	<style>${mainCss}</style>
+	<link rel="stylesheet" href="https://bootswatch.com/5/solar/bootstrap.min.css" />
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
 </head>`;
 }
 
 function navbar(): string {
-	return `<!DOCTYPE html>
-<html lang="en" prefix="og: https://ogp.me/ns#">
-	<head>
-		<meta name="viewport" content="width=device-width, initial-scale=0.6" />
-		<meta property="og:url" content="${baseUrl}/" />
-		<meta name="keywords" content="twitch, chat, logs" />
-		<meta property="og:type" content="website" />
-		<meta name="application-name" content="Best Logs" />
-		<style>${mainCss}</style>
-		<link rel="stylesheet" href="https://bootswatch.com/5/solar/bootstrap.min.css" />
-		<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
-	</head>
-
-	<nav class="navbar navbar-expand-lg bg-dark navbar-dark">
+	return `<nav class="navbar navbar-expand-lg bg-dark navbar-dark">
 		<div class="container-fluid">
 			<a class="navbar-brand" href="/"> <img class="navbarImage" src="${assetBaseUrl}/DankG.png" title="BestLogs" alt="BestLogs" />Best Logs</a>
 			<button
@@ -177,8 +172,10 @@ function htmlDocument(
 	scripts = '',
 	image = `${assetBaseUrl}/DankG.png`,
 ): string {
-	return `${navbar()}
+	return `<!DOCTYPE html>
+<html lang="en" prefix="og: https://ogp.me/ns#">
 ${pageHead(title, description, image)}
+${navbar()}
 ${body}
 ${scripts}
 </html>
@@ -473,14 +470,14 @@ function statusPage(): string {
 	async function loadStatus() {
 		const response = await fetch('${baseUrl}/instances');
 		const data = await response.json();
-		const instances = data.instances || {};
+		const instanceCounts = data.instanceCounts || {};
 		const lastElement = document.getElementById('last-update');
 		const nextElement = document.getElementById('next-update');
 		const uptimeElement = document.getElementById('current-uptime');
 
 		for (const card of document.querySelectorAll('[data-instance]')) {
 			const instance = card.getAttribute('data-instance');
-			const count = Number(instances[instance] || 0);
+			const count = Number(instanceCounts[instance] || 0);
 			const status = card.querySelector('.status');
 			const countElement = status.nextElementSibling;
 

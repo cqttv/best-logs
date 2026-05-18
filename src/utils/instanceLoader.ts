@@ -10,6 +10,7 @@ interface ChannelsBody {
 
 export class InstanceLoader {
 	readonly instanceCounts = new Map<string, number>();
+	readonly instanceChannels = new Map<string, Channel[]>();
 	readonly instanceChannelSets = new Map<string, Set<string>>();
 	uniqueChannels = new Map<string, Channel>();
 	uniqueChannelsArray: Channel[] = [];
@@ -80,6 +81,7 @@ export class InstanceLoader {
 					}
 
 					this.instanceCounts.set(host, currentInstanceChannels.length);
+					this.instanceChannels.set(host, currentInstanceChannels);
 					this.instanceChannelSets.set(host, channelSet);
 					instancesWorking++;
 
@@ -93,6 +95,7 @@ export class InstanceLoader {
 						console.error(`[${host}] Failed loading channels: ${error}`);
 					}
 					this.instanceCounts.set(host, 0);
+					this.instanceChannels.set(host, []);
 					this.instanceChannelSets.set(host, new Set<string>());
 				}
 			}),
@@ -111,6 +114,8 @@ export class InstanceLoader {
 		}
 
 		if (!onlyError && instancesWorking > 0) {
+			this.listData.clear();
+			this.statusCodes.clear();
 			this.lastUpdated = Date.now();
 		}
 
@@ -130,20 +135,12 @@ export class InstanceLoader {
 		void this.loopErrorInstanceChannels();
 	}
 
-	async loopLoadInstanceChannels(noLogs?: boolean): Promise<void> {
-		if (noLogs) {
-			if (this.forceLoadPromise) return this.forceLoadPromise;
-			this.forceLoadPromise = this.loadInstanceChannels(noLogs).finally(() => {
-				this.forceLoadPromise = null;
-			});
-			return this.forceLoadPromise;
-		}
-
-		clearInterval(this.loadLoop ?? undefined);
-		await this.loadInstanceChannels(noLogs);
-		this.loadLoop = setInterval(() => {
-			void this.loadInstanceChannels(noLogs);
-		}, this.reloadInterval);
+	async loopLoadInstanceChannels(): Promise<void> {
+		if (this.forceLoadPromise) return this.forceLoadPromise;
+		this.forceLoadPromise = this.loadInstanceChannels(true).finally(() => {
+			this.forceLoadPromise = null;
+		});
+		return this.forceLoadPromise;
 	}
 
 	async loopErrorInstanceChannels(): Promise<void> {
