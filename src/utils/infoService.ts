@@ -23,8 +23,9 @@ export class InfoService {
 	private readonly negativeCache = new TTLCache<string, true>({
 		ttl: 60_000,
 		sweepInterval: 60_000,
+		maxSize: 100_000,
 	});
-	private readonly inFlight = new InFlight<string, UserInfo>();
+	private readonly inFlight = new InFlight<string, UserInfo>(20_000);
 	private readonly circuit = new CircuitBreaker({ name: 'IVR', baseBlockMs: 10_000, maxBlockMs: 5 * 60_000 });
 
 	async getInfo(user: string): Promise<UserInfo> {

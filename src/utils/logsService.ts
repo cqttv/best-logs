@@ -19,7 +19,7 @@ interface InstanceAccumulator {
 
 export class LogsService {
 	private readonly circuit = new CircuitBreaker({ name: 'Logs' });
-	private readonly inFlight = new InFlight<string, LogsResult>();
+	private readonly inFlight = new InFlight<string, LogsResult>(20_000);
 
 	isCircuitBroken(url: string): boolean {
 		return this.circuit.isOpen(url.replace(/^https?:\/\//, ''));
@@ -70,7 +70,7 @@ export class LogsService {
 		const channelInstancesWithLength: InstanceAccumulator[] = [];
 
 		if (forceLoad) {
-			await instanceLoader.loopLoadInstanceChannels(true);
+			await instanceLoader.loopLoadInstanceChannels();
 		}
 
 		const [channelInfo, userInfo] = await Promise.all([
@@ -247,7 +247,7 @@ export class LogsService {
 		const channelDisplay = channelLogin ?? channelClean;
 		const channelFull = prettyFlag
 			? `https://tv.supa.sh/logs?c=${channelDisplay}`
-			: `https://${host}/?${channelPath}=${channelClean}`;
+			: `https://${host}/?channel=${channel}`;
 
 		const fetchList = (): Promise<LogsAvailabilityDate[]> =>
 			httpRequest(`https://${apiHost}/list?${channelPath}=${channelClean}`, {
@@ -309,7 +309,7 @@ export class LogsService {
 		const userDisplay = userLogin ?? userClean;
 		const fullLink = prettyFlag
 			? `https://tv.supa.sh/logs?c=${channelDisplay}&u=${userDisplay}`
-			: `https://${host}/?${channelPath}=${channelClean}&${userPath}=${userClean}`;
+			: `https://${host}/?channel=${channel}&username=${user}`;
 
 		if (statusCode === 403) return { Status: InstanceStatus.OptedOut, Link: `https://${host}` };
 

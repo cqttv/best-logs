@@ -46,6 +46,10 @@ export class TTLCache<K, V> {
 		return this.cache.delete(key);
 	}
 
+	clear(): void {
+		this.cache.clear();
+	}
+
 	get size(): number {
 		return this.cache.size;
 	}
@@ -98,9 +102,12 @@ export class TTLCache<K, V> {
 export class InFlight<K, V> {
 	private readonly map = new Map<K, Promise<V>>();
 
+	constructor(private readonly maxSize = 10_000) {}
+
 	run(key: K, fn: () => Promise<V>): Promise<V> {
 		const existing = this.map.get(key);
 		if (existing !== undefined) return existing;
+		if (this.map.size >= this.maxSize) return fn();
 		const promise = fn();
 		this.map.set(key, promise);
 		void promise.finally(() => this.map.delete(key));

@@ -6,10 +6,11 @@ import { instanceLoader } from '../utils/instanceLoader.js';
 const router = Router();
 
 router.get('/instances', (_req: Request, res: Response) => {
-	const { instanceCounts } = instanceLoader;
+	const { instanceCounts, instanceChannels } = instanceLoader;
 	res.json({
 		instancesStats: checkInstances(instanceCounts),
-		instances: Object.fromEntries(instanceCounts),
+		instances: Object.fromEntries(instanceChannels),
+		instanceCounts: Object.fromEntries(instanceCounts),
 		lastUpdate: instanceLoader.lastUpdated,
 		nextUpdate: Math.max(0, instanceLoader.lastUpdated + instanceLoader.reloadInterval - Date.now()),
 		uptime: Date.now() - process.uptime() * 1000,

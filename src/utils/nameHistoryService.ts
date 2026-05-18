@@ -9,8 +9,9 @@ export class NameHistoryService {
 	private readonly cache = new TTLCache<string, NameHistoryEntry[]>({
 		ttl: 10 * 60 * 1000,
 		sweepInterval: 10 * 60 * 1000,
+		maxSize: 50_000,
 	});
-	private readonly inFlight = new InFlight<string, NameHistoryEntry[]>();
+	private readonly inFlight = new InFlight<string, NameHistoryEntry[]>(5000);
 
 	async getNameHistory(user: string): Promise<NameHistoryEntry[]> {
 		if (!user.startsWith('login:') && Number.isNaN(Number(user))) {
@@ -52,8 +53,10 @@ export class NameHistoryService {
 					for (const entry of historyBody) {
 						const existing = nameHistoryMap.get(entry.user_login);
 						if (existing) {
-							if (entry.last_timestamp > existing.last_timestamp) existing.last_timestamp = entry.last_timestamp;
-							if (entry.first_timestamp < existing.first_timestamp) existing.first_timestamp = entry.first_timestamp;
+							if (new Date(entry.last_timestamp) > new Date(existing.last_timestamp))
+								existing.last_timestamp = entry.last_timestamp;
+							if (new Date(entry.first_timestamp) < new Date(existing.first_timestamp))
+								existing.first_timestamp = entry.first_timestamp;
 						} else {
 							nameHistoryMap.set(entry.user_login, { ...entry });
 						}
@@ -65,8 +68,8 @@ export class NameHistoryService {
 			}),
 		);
 
-		const nameHistory = [...nameHistoryMap.values()].toSorted((a, b) =>
-			a.last_timestamp < b.last_timestamp ? -1 : a.last_timestamp > b.last_timestamp ? 1 : 0,
+		const nameHistory = [...nameHistoryMap.values()].toSorted(
+			(a, b) => new Date(a.last_timestamp).getTime() - new Date(b.last_timestamp).getTime(),
 		);
 
 		console.log(`[NameHistory] Found ${String(nameHistory.length)} unique usernames for ID ${userId}`);

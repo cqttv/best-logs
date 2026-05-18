@@ -9,7 +9,7 @@ router.get('/health', (_req: Request, res: Response) => {
 	const start = performance.now();
 
 	const { instanceCounts, uniqueChannels } = instanceLoader;
-	const healthy = uniqueChannels.size > 0;
+	const healthy = [...instanceCounts.values()].some((count) => count > 0);
 
 	res.status(healthy ? 200 : 500).json({
 		healthy,

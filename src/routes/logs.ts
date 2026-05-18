@@ -6,8 +6,6 @@ import { fetchStream } from '../utils/request.js';
 import { logsService } from '../utils/logsService.js';
 import { USER_AGENT, formatError, formatUsername, userChanRegex } from '../utils/helpers.js';
 
-const ALLOWED_LOG_PARAMS = new Set(['limit', 'raw', 'reverse', 'json', 'jsonBasic']);
-const DATE_SEGMENT_REGEX = /^\d{1,4}$/;
 const NUMERIC_ID_REGEX = /^\d{1,20}$/;
 const ALLOWED_CONTENT_TYPES = ['text/plain', 'application/json', 'application/octet-stream'];
 
@@ -93,7 +91,7 @@ router.get('/list', async (req: Request, res: Response) => {
 			return;
 		}
 
-		const instanceLink = data.channelLogs.instances[0];
+		const instanceLink = data.userLogs.instances[0] ?? data.channelLogs.instances[0];
 		const channelId = data.request.channel?.id;
 		const userId = data.request.user?.id;
 
@@ -102,13 +100,12 @@ router.get('/list', async (req: Request, res: Response) => {
 			return;
 		}
 
-		if (!userId) {
-			res.json({ availableLogs: data.loggedData.list });
-			return;
+		let requestUrl = req.originalUrl.replace(/([?&])channel(?:id)?=[^&]*/i, `$1channelid=${channelId}`);
+		if (userId) {
+			requestUrl = requestUrl.replace(/([?&])user(?:id)?=[^&]*/i, `$1userid=${userId}`);
 		}
 
-		const params = new URLSearchParams({ channelid: channelId, userid: userId });
-		await proxyToInstance(res, `${instanceLink}/list?${params.toString()}`);
+		await proxyToInstance(res, `${instanceLink}${requestUrl}`);
 	} catch (error) {
 		if (res.headersSent) {
 			res.destroy();
@@ -144,8 +141,7 @@ const makeChannelLogsHandler =
 		}
 
 		let pathUser: string | null = null;
-		let dateStart = 1;
-		const userKeyword = segments[1];
+		const userKeyword = segments[1]?.toLowerCase();
 		if (userKeyword === 'user' || userKeyword === 'userid') {
 			const rawUser = segments[2];
 			if (!rawUser) {
@@ -153,15 +149,6 @@ const makeChannelLogsHandler =
 				return;
 			}
 			pathUser = userKeyword === 'userid' ? `id:${rawUser}` : formatUsername(rawUser);
-			dateStart = 3;
-		}
-
-		const dateSegments = segments.slice(dateStart);
-		for (const seg of dateSegments) {
-			if (!DATE_SEGMENT_REGEX.test(seg)) {
-				sendError(res, 400, 'Invalid path segment');
-				return;
-			}
 		}
 
 		const user = pathUser ?? resolveUserInput(req);
@@ -186,17 +173,12 @@ const makeChannelLogsHandler =
 				return;
 			}
 
-			const pathParts = userId
-				? ['channelid', channelId, 'userid', userId, ...dateSegments]
-				: ['channelid', channelId, ...dateSegments];
-			const params = new URLSearchParams();
-			for (const key of ALLOWED_LOG_PARAMS) {
-				const val = req.query[key];
-				if (typeof val === 'string') params.set(key, val);
+			let requestUrl = req.originalUrl.replace(/^\/channel(?:id)?\/[^/?]+/i, `/channelid/${channelId}`);
+			if (userId) {
+				requestUrl = requestUrl.replace(/([/?&])user(?:id)?([/=])[^/?&]+/i, `$1userid$2${userId}`);
 			}
-			const qs = params.size > 0 ? `?${params.toString()}` : '';
 
-			await proxyToInstance(res, `${instanceLink}/${pathParts.join('/')}${qs}`);
+			await proxyToInstance(res, `${instanceLink}${requestUrl}`);
 		} catch (error) {
 			if (res.headersSent) {
 				res.destroy();
