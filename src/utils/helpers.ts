@@ -1,8 +1,8 @@
 import type { ElapsedInfo } from '../types/common.js';
 
 export const USER_AGENT = 'Best Logs by ZonianMidian';
-export const userIdRegex = /^id:(\d+)$/i;
-export const userChanRegex = /^[a-z0-9]\w{0,24}$|^id:(\d+)$/i;
+export const userIdRegex = /^id:(\d{1,20})$/i;
+export const userChanRegex = /^[a-z0-9]\w{0,24}$|^id:(\d{1,20})$/i;
 export const formatUsername = (username: string): string => {
 	try {
 		return decodeURIComponent(username.replaceAll(/[@#,]/g, '').toLowerCase());
@@ -10,6 +10,11 @@ export const formatUsername = (username: string): string => {
 		return username.replaceAll(/[@#,]/g, '').toLowerCase();
 	}
 };
+
+export function parseUsername(input: string): string | null {
+	const formatted = formatUsername(input);
+	return userChanRegex.test(formatted) ? formatted : null;
+}
 
 export function elapsedFrom(start: number): ElapsedInfo {
 	const end = performance.now();

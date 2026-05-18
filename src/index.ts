@@ -12,11 +12,24 @@ import instancesRouter from './routes/instances.js';
 
 const app = express();
 
-app.use((_req: Request, res: Response, next: NextFunction) => {
+app.disable('x-powered-by');
+
+const allowedMethods = 'GET, HEAD, OPTIONS';
+const exposedHeaders = 'Content-Length, Content-Type, Location';
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+	const requestHeaders = req.header('Access-Control-Request-Headers');
+
 	res.setHeader('Access-Control-Allow-Origin', '*');
-	res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-	res.setHeader('Access-Control-Allow-Headers', '*');
+	res.setHeader('Access-Control-Allow-Methods', allowedMethods);
+	res.setHeader('Access-Control-Allow-Headers', requestHeaders ?? '*');
+	res.setHeader('Access-Control-Expose-Headers', exposedHeaders);
 	res.setHeader('Access-Control-Max-Age', '86400');
+
+	if (req.header('Access-Control-Request-Private-Network') === 'true') {
+		res.setHeader('Access-Control-Allow-Private-Network', 'true');
+	}
+
 	next();
 });
 
@@ -44,7 +57,36 @@ app.use(function (err: Error & { status?: number }, _req: Request, res: Response
 
 await instanceLoader.loadInstanceChannels();
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
 	console.log(`[API] Listening on ${String(config.port)}`);
 	instanceLoader.startLoops();
 });
+
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
+server.requestTimeout = 125_000;
+
+let shuttingDown = false;
+
+function shutdown(signal: NodeJS.Signals): void {
+	if (shuttingDown) {
+		return;
+	}
+	shuttingDown = true;
+	console.log(`[API] Received ${signal}, shutting down`);
+	instanceLoader.stopLoops();
+	server.close((error) => {
+		if (error) {
+			console.error(`[API] Failed to close server: ${error.message}`);
+			process.exitCode = 1;
+		}
+	});
+	setTimeout(() => {
+		console.error('[API] Shutdown timed out');
+		process.exitCode = 1;
+		throw new Error('Shutdown timed out');
+	}, 30_000).unref();
+}
+
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);

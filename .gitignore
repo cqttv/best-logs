@@ -1,8 +1,10 @@
-node_modules
-dist
-config.json
+node_modules/
+dist/
+public/
 
 # ai files
-.claude
+.claude/
 CLAUDE.md
-.rtk
+.rtk/
+RTK.md
+AGENTS.md

@@ -10,14 +10,18 @@ router.get('/instances', (_req: Request, res: Response) => {
 	res.json({
 		instancesStats: checkInstances(instanceCounts),
 		instances: Object.fromEntries(instanceCounts),
+		lastUpdate: instanceLoader.lastUpdated,
+		nextUpdate: Math.max(0, instanceLoader.lastUpdated + instanceLoader.reloadInterval - Date.now()),
+		uptime: Date.now() - process.uptime() * 1000,
 	});
 });
 
 router.get('/channels', (_req: Request, res: Response) => {
-	const { instanceCounts, uniqueChannels } = instanceLoader;
+	const { instanceCounts, uniqueChannels, uniqueChannelsArray } = instanceLoader;
 	res.json({
 		instancesStats: checkInstances(instanceCounts),
-		channels: [...uniqueChannels.values()],
+		total: uniqueChannels.size,
+		channels: uniqueChannelsArray,
 	});
 });
 

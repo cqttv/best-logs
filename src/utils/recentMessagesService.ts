@@ -2,6 +2,7 @@ import { request as httpRequest } from './request.js';
 import { USER_AGENT, elapsedFrom } from './helpers.js';
 import { config } from './config.js';
 import { logsService } from './logsService.js';
+import { InFlight } from './cache.js';
 import type { HttpResponse } from './request.js';
 import type { RecentMessagesResult } from '../types/messages.js';
 import type { LogsAvailabilityDate } from '../types/instance.js';
@@ -16,6 +17,8 @@ interface RecentMessagesBody {
 const TMI_SENT_REGEX = /tmi-sent-ts=(\d+)(;|\s:)/;
 
 export class RecentMessagesService {
+	private readonly inFlight = new InFlight<string, RecentMessagesResult>();
+
 	async fetchMessages(instance: string, channel: string, searchParams: Record<string, string>): Promise<HttpResponse> {
 		const url = new URL(`https://${instance}/api/v2/recent-messages/${channel}`);
 		for (const [key, value] of Object.entries(searchParams)) {
@@ -68,10 +71,18 @@ export class RecentMessagesService {
 	}
 
 	async getRecentMessages(channel: string, searchParams: Record<string, string>): Promise<RecentMessagesResult> {
+		const key = `${channel}:${new URLSearchParams(Object.entries(searchParams).toSorted()).toString()}`;
+		return this.inFlight.run(key, () => this.fetchRecentMessages(channel, searchParams));
+	}
+
+	private async fetchRecentMessages(
+		channel: string,
+		searchParams: Record<string, string>,
+	): Promise<RecentMessagesResult> {
 		const start = performance.now();
 
 		const instances = config.recentmessagesInstances;
-		const { rm_only } = searchParams;
+		const { rm_only, ...upstreamParams } = searchParams;
 		const limitNum = Math.min(Math.max(1, Number(searchParams.limit) || 1000), 10_000);
 
 		if (instances.length === 0) {
@@ -101,7 +112,7 @@ export class RecentMessagesService {
 
 		const rmWinner = await Promise.any(
 			instances.map(async (entry) => {
-				const { body: rawBody, statusCode } = await this.fetchMessages(entry, channel, searchParams);
+				const { body: rawBody, statusCode } = await this.fetchMessages(entry, channel, upstreamParams);
 				let body: RecentMessagesBody;
 				try {
 					body = JSON.parse(rawBody) as RecentMessagesBody;
@@ -125,7 +136,7 @@ export class RecentMessagesService {
 
 		if (rmWinner) {
 			const { entry, body, statusCode } = rmWinner;
-			recentMessages = body.messages.filter((str) => !str.includes(':tmi.twitch.tv ROOMSTATE #'));
+			recentMessages = body.messages.filter((str) => !str.includes(':tmi.twitch.tv ROOMSTATE #')).slice(-limitNum);
 			messages = recentMessages;
 			statusMessage = body.status_message;
 			errorCode = body.error_code;
@@ -148,7 +159,7 @@ export class RecentMessagesService {
 
 			if (logs.available.channel) {
 				let logInstances = logs.channelLogs.instances.filter((link) => !logsService.isCircuitBroken(link));
-				const mainInstance = config.instances[0] ? `https://${config.instances[0]}` : '';
+				const mainInstance = config.instances[0] ? `https://${config.instances[0].host}` : '';
 				const mainIdx = logInstances.indexOf(mainInstance);
 				if (mainIdx > 0) {
 					const mainEntry = logInstances[mainIdx];
@@ -160,15 +171,21 @@ export class RecentMessagesService {
 				for (const link of logInstances) {
 					try {
 						const daysToFetch = logs.loggedData.list.slice(0, 7);
-						const dayResults = await Promise.allSettled(
-							daysToFetch.map((date) => this.fetchRustlogs(link, channel, date, limitNum, firstTs)),
-						);
-
 						let logsMessages = recentMessages;
-						for (let i = dayResults.length - 1; i >= 0; i--) {
-							const result = dayResults[i];
-							if (result?.status === 'fulfilled' && result.value.length > 0) {
-								logsMessages = [...result.value, ...logsMessages];
+
+						for (const date of daysToFetch) {
+							const remaining = limitNum - logsMessages.length;
+							if (remaining <= 0) break;
+
+							try {
+								const dayMessages = await this.fetchRustlogs(link, channel, date, remaining, firstTs);
+								if (dayMessages.length > 0) {
+									logsMessages = [...dayMessages.slice(-remaining), ...logsMessages].slice(-limitNum);
+								}
+							} catch (dayError) {
+								if (logsMessages.length === recentMessages.length) {
+									throw dayError;
+								}
 							}
 						}
 
@@ -192,6 +209,7 @@ export class RecentMessagesService {
 			}
 		}
 
+		messages = messages.slice(-limitNum);
 		const elapsed = elapsedFrom(start);
 
 		console.log(
@@ -202,7 +220,7 @@ export class RecentMessagesService {
 		const requestObj: Record<string, string | number | boolean> = {
 			...requestBase,
 			...Object.fromEntries(
-				Object.entries(searchParams)
+				Object.entries(upstreamParams)
 					.filter(([key]) => !(key in requestBase))
 					.map(([key, value]) => [key, value === 'true' ? true : value === 'false' ? false : value]),
 			),

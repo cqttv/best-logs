@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import { nameHistoryService } from '../utils/nameHistoryService.js';
 import { formatError, userChanRegex } from '../utils/helpers.js';
 
-const nameHistoryInputRe = /^\d+$|^login:[a-z0-9]\w{0,24}$/i;
+const nameHistoryInputRe = /^\d{1,20}$|^login:[a-z0-9]\w{0,24}$/i;
 
 const router = Router();
 

@@ -1,6 +1,7 @@
 import { request as httpRequest } from './request.js';
 import { USER_AGENT } from './helpers.js';
 import { config } from './config.js';
+import { TTLCache } from './cache.js';
 import type { Channel, LogsAvailabilityDate } from '../types/instance.js';
 
 interface ChannelsBody {
@@ -8,35 +9,33 @@ interface ChannelsBody {
 }
 
 export class InstanceLoader {
-	readonly LIST_TTL = 10 * 60 * 1000;
-	readonly STATUS_TTL = 5 * 60 * 1000;
-
 	readonly instanceCounts = new Map<string, number>();
 	readonly instanceChannelSets = new Map<string, Set<string>>();
 	uniqueChannels = new Map<string, Channel>();
-	readonly statusCodes = new Map<string, { code: number; ts: number }>();
-	readonly listData = new Map<string, { list: LogsAvailabilityDate[]; ts: number }>();
+	uniqueChannelsArray: Channel[] = [];
 	lastUpdated = Date.now();
 	readonly reloadInterval = 1 * 60 * 60 * 1000;
 
+	readonly listData = new TTLCache<string, LogsAvailabilityDate[]>({
+		ttl: 10 * 60 * 1000,
+		sweepInterval: 5 * 60 * 1000,
+		maxSize: 100_000,
+	});
+	readonly statusCodes = new TTLCache<string, number>({
+		ttl: 5 * 60 * 1000,
+		sweepInterval: 5 * 60 * 1000,
+		maxSize: 200_000,
+	});
+
 	private readonly errorInterval = 1 * 60 * 1000;
-	private readonly sweepInterval = 5 * 60 * 1000;
 	private errorLoop: ReturnType<typeof setInterval> | null = null;
 	private loadLoop: ReturnType<typeof setInterval> | null = null;
-	private sweepLoop: ReturnType<typeof setInterval> | null = null;
 	private forceLoadPromise: Promise<void> | null = null;
 
 	addChannel(channel: Channel): void {
-		this.uniqueChannels.set(channel.userID, channel);
-	}
-
-	private sweepCaches(): void {
-		const now = Date.now();
-		for (const [key, value] of this.listData) {
-			if (now - value.ts >= this.LIST_TTL) this.listData.delete(key);
-		}
-		for (const [key, value] of this.statusCodes) {
-			if (now - value.ts >= this.STATUS_TTL) this.statusCodes.delete(key);
+		if (!this.uniqueChannels.has(channel.userID)) {
+			this.uniqueChannels.set(channel.userID, channel);
+			this.uniqueChannelsArray.push(channel);
 		}
 	}
 
@@ -44,8 +43,8 @@ export class InstanceLoader {
 		let instances = config.instances;
 
 		if (onlyError) {
-			instances = instances.filter((url) => {
-				const count = this.instanceCounts.get(url);
+			instances = instances.filter(({ host }) => {
+				const count = this.instanceCounts.get(host);
 				return count === 0 || count === undefined;
 			});
 		}
@@ -57,17 +56,13 @@ export class InstanceLoader {
 			return;
 		}
 
-		this.sweepCaches();
-
-		// Full reload: build into a fresh map, then swap atomically (no clear() race window).
-		// onlyError reload: instances had 0 channels before, so only new entries are added — write directly.
-		const newUniqueChannels = onlyError ? null : new Map<string, Channel>();
+		const loadedChannels = new Map<string, Channel>();
 
 		let instancesWorking = 0;
 		await Promise.allSettled(
-			instances.map(async (url) => {
+			instances.map(async ({ host, apiHost }) => {
 				try {
-					const response = await httpRequest(`https://${url}/channels`, {
+					const response = await httpRequest(`https://${apiHost}/channels`, {
 						headers: { 'User-Agent': USER_AGENT },
 						timeout: 10_000,
 					});
@@ -81,37 +76,41 @@ export class InstanceLoader {
 					for (const channel of currentInstanceChannels) {
 						channelSet.add(channel.name);
 						channelSet.add(channel.userID);
-						if (newUniqueChannels) {
-							newUniqueChannels.set(channel.userID, channel);
-						} else {
-							this.uniqueChannels.set(channel.userID, channel);
-						}
+						loadedChannels.set(channel.userID, channel);
 					}
 
-					this.instanceCounts.set(url, currentInstanceChannels.length);
-					this.instanceChannelSets.set(url, channelSet);
+					this.instanceCounts.set(host, currentInstanceChannels.length);
+					this.instanceChannelSets.set(host, channelSet);
 					instancesWorking++;
 
 					if (!noLogs) {
-						console.log(`[${url}] Loaded ${String(currentInstanceChannels.length)} channels`);
+						console.log(`[${host}] Loaded ${String(currentInstanceChannels.length)} channels`);
 					}
 				} catch (error_) {
 					const msg = error_ instanceof Error ? error_.message : String(error_);
 					const error = error_ instanceof SyntaxError ? 'Invalid JSON' : msg;
 					if (!noLogs) {
-						console.error(`[${url}] Failed loading channels: ${error}`);
+						console.error(`[${host}] Failed loading channels: ${error}`);
 					}
-					this.instanceCounts.set(url, 0);
-					this.instanceChannelSets.set(url, new Set<string>());
+					this.instanceCounts.set(host, 0);
+					this.instanceChannelSets.set(host, new Set<string>());
 				}
 			}),
 		);
 
-		if (newUniqueChannels !== null) {
-			this.uniqueChannels = newUniqueChannels;
+		if (onlyError) {
+			for (const [id, channel] of loadedChannels) {
+				if (!this.uniqueChannels.has(id)) {
+					this.uniqueChannels.set(id, channel);
+					this.uniqueChannelsArray.push(channel);
+				}
+			}
+		} else if (instancesWorking > 0) {
+			this.uniqueChannels = loadedChannels;
+			this.uniqueChannelsArray = [...loadedChannels.values()];
 		}
 
-		if (!onlyError) {
+		if (!onlyError && instancesWorking > 0) {
 			this.lastUpdated = Date.now();
 		}
 
@@ -128,17 +127,11 @@ export class InstanceLoader {
 			void this.loadInstanceChannels();
 		}, this.reloadInterval);
 
-		clearInterval(this.sweepLoop ?? undefined);
-		this.sweepLoop = setInterval(() => {
-			this.sweepCaches();
-		}, this.sweepInterval);
-
 		void this.loopErrorInstanceChannels();
 	}
 
 	async loopLoadInstanceChannels(noLogs?: boolean): Promise<void> {
 		if (noLogs) {
-			// Force reload from a request: deduplicate concurrent callers
 			if (this.forceLoadPromise) return this.forceLoadPromise;
 			this.forceLoadPromise = this.loadInstanceChannels(noLogs).finally(() => {
 				this.forceLoadPromise = null;
@@ -161,6 +154,15 @@ export class InstanceLoader {
 		this.errorLoop = setInterval(() => {
 			void this.loadInstanceChannels(true, true);
 		}, this.errorInterval);
+	}
+
+	stopLoops(): void {
+		clearInterval(this.loadLoop ?? undefined);
+		clearInterval(this.errorLoop ?? undefined);
+		this.loadLoop = null;
+		this.errorLoop = null;
+		this.listData.destroy();
+		this.statusCodes.destroy();
 	}
 }
 
