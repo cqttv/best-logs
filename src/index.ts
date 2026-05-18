@@ -55,7 +55,7 @@ app.use(function (err: Error, _req: Request, res: Response, _next: NextFunction)
 	res.status(status).json({ error: err.message, code: status });
 });
 
-await instanceLoader.loadInstanceChannels();
+await instanceLoader.reloadInstanceChannels();
 
 const server = app.listen(config.port, () => {
 	console.log(`[API] Listening on ${String(config.port)}`);

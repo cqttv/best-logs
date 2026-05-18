@@ -73,7 +73,7 @@ export class LogsService {
 		const channelInstancesWithLength: InstanceAccumulator[] = [];
 
 		if (forceLoad) {
-			await instanceLoader.loopLoadInstanceChannels();
+			await instanceLoader.forceReloadInstanceChannels();
 		}
 
 		const [channelResult, userResult] = await Promise.all([
