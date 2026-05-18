@@ -1,4 +1,4 @@
-import { request as httpRequest } from './request.js';
+import { requestJson } from './request.js';
 import { USER_AGENT } from './helpers.js';
 import { config } from './config.js';
 import { TTLCache } from './cache.js';
@@ -82,12 +82,12 @@ export class InstanceLoader {
 		await Promise.allSettled(
 			instances.map(async ({ host, apiHost }) => {
 				try {
-					const response = await httpRequest(`https://${apiHost}/channels`, {
+					const response = await requestJson<ChannelsBody>(`https://${apiHost}/channels`, {
 						headers: { 'User-Agent': USER_AGENT },
 						timeout: 10_000,
 					});
 
-					const logsData = JSON.parse(response.body) as ChannelsBody;
+					const logsData = response.body;
 					if (logsData.channels.length === 0) throw new Error('No channels found');
 
 					const currentInstanceChannels = logsData.channels;

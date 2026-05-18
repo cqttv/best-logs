@@ -1,4 +1,4 @@
-import { request as httpRequest } from './request.js';
+import { parseJsonResponse, requestText } from './request.js';
 import { USER_AGENT, userIdRegex, elapsedFrom } from './helpers.js';
 import { config } from './config.js';
 import { instanceLoader } from './instanceLoader.js';
@@ -287,13 +287,13 @@ export class LogsService {
 			: `https://${host}/?channel=${channel}`;
 
 		const fetchList = (): Promise<LogsAvailabilityDate[] | null> =>
-			httpRequest(`https://${apiHost}/list?${channelPath}=${channelClean}`, {
+			requestText(`https://${apiHost}/list?${channelPath}=${channelClean}`, {
 				headers: { 'User-Agent': USER_AGENT },
 				timeout: 5000,
 			})
 				.then((res) => {
 					if (res.statusCode >= 500) throw new Error(`HTTP ${String(res.statusCode)}`);
-					const data = JSON.parse(res.body) as { availableLogs?: LogsAvailabilityDate[] };
+					const data = parseJsonResponse<{ availableLogs?: LogsAvailabilityDate[] }>(res).body;
 					this.circuit.recordSuccess(host);
 					return data.availableLogs ?? [];
 				})
@@ -317,7 +317,7 @@ export class LogsService {
 		const instanceCacheKey = `${host}:${channel}:${user}`;
 
 		const fetchStatus = (): Promise<number | null> =>
-			httpRequest(`https://${apiHost}/list?${channelPath}=${channelClean}&${userPath}=${userClean}`, {
+			requestText(`https://${apiHost}/list?${channelPath}=${channelClean}&${userPath}=${userClean}`, {
 				headers: { 'User-Agent': USER_AGENT },
 				timeout: 5000,
 			})

@@ -1,4 +1,4 @@
-import { request as httpRequest } from './request.js';
+import { parseJsonResponse, requestText } from './request.js';
 import { USER_AGENT, elapsedFrom } from './helpers.js';
 import { config } from './config.js';
 import { logsService } from './logsService.js';
@@ -29,7 +29,7 @@ export class RecentMessagesService {
 		for (const [key, value] of Object.entries(searchParams)) {
 			url.searchParams.set(key, value);
 		}
-		return httpRequest(url.toString(), {
+		return requestText(url.toString(), {
 			headers: { 'User-Agent': USER_AGENT },
 			timeout: 5000,
 			...(signal === undefined ? {} : { signal }),
@@ -43,7 +43,7 @@ export class RecentMessagesService {
 		limit: number,
 		firstTs: string | null,
 	): Promise<string[]> {
-		const { body } = await httpRequest(
+		const { body } = await requestText(
 			`${instance}/channel/${channel}/${date.year}/${date.month}/${date.day}?limit=${String(limit)}&raw&reverse`,
 			{
 				headers: { 'User-Agent': USER_AGENT },
@@ -124,15 +124,11 @@ export class RecentMessagesService {
 		const rmController = new AbortController();
 		const rmWinner = await Promise.any(
 			instances.map(async (entry) => {
-				const { body: rawBody, statusCode } = await this.fetchMessages(
-					entry,
-					channel,
-					upstreamParams,
-					rmController.signal,
-				);
+				const response = await this.fetchMessages(entry, channel, upstreamParams, rmController.signal);
+				const { statusCode } = response;
 				let body: RecentMessagesBody;
 				try {
-					body = JSON.parse(rawBody) as RecentMessagesBody;
+					body = parseJsonResponse<RecentMessagesBody>(response).body;
 				} catch {
 					capturedErrors.push({ entry, body: { messages: [] }, statusCode });
 					throw new Error('Invalid JSON response');

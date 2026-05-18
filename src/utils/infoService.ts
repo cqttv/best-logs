@@ -1,4 +1,4 @@
-import { request as httpRequest } from './request.js';
+import { parseJsonResponse, requestText } from './request.js';
 import { USER_AGENT, userIdRegex } from './helpers.js';
 import { TTLCache, InFlight } from './cache.js';
 import { CircuitBreaker } from './circuitBreaker.js';
@@ -45,7 +45,7 @@ export class InfoService {
 		const params = new URLSearchParams({ [isId ? 'id' : 'login']: user.replace('id:', '') });
 		let response;
 		try {
-			response = await httpRequest(`https://api.ivr.fi/v2/twitch/user?${params.toString()}`, {
+			response = await requestText(`https://api.ivr.fi/v2/twitch/user?${params.toString()}`, {
 				headers: { 'User-Agent': USER_AGENT },
 				timeout: 5000,
 			});
@@ -67,7 +67,7 @@ export class InfoService {
 			this.circuit.recordFailure(IVR_KEY);
 			throw new Error(`IVR API error: ${String(response.statusCode)}`);
 		}
-		const body = JSON.parse(response.body) as IvrUserData[];
+		const body = parseJsonResponse<IvrUserData[]>(response).body;
 		const fetched = body[0];
 		if (!fetched?.id) {
 			this.negativeCache.set(user, true);

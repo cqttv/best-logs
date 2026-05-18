@@ -2,7 +2,7 @@ import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { fetchStream } from '../utils/request.js';
+import { requestStream } from '../utils/request.js';
 import { logsService } from '../utils/logsService.js';
 import { USER_AGENT, formatError, formatUsername, userChanRegex } from '../utils/helpers.js';
 
@@ -20,7 +20,7 @@ async function proxyToInstance(req: Request, res: Response, targetUrl: string): 
 	};
 	req.on('close', onClose);
 	try {
-		const { body, statusCode, headers } = await fetchStream(targetUrl, {
+		const { body, statusCode, headers } = await requestStream(targetUrl, {
 			headers: { 'User-Agent': USER_AGENT },
 			timeout: 120_000,
 			signal: abortController.signal,
