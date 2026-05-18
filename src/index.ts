@@ -9,6 +9,7 @@ import logsRouter from './routes/logs.js';
 import recentMessagesRouter from './routes/recentMessages.js';
 import nameHistoryRouter from './routes/nameHistory.js';
 import instancesRouter from './routes/instances.js';
+import { AppError } from './utils/errors.js';
 
 const app = express();
 
@@ -46,16 +47,15 @@ app.use(nameHistoryRouter);
 app.use(instancesRouter);
 
 app.use(function (_req: Request, _res: Response, next: NextFunction) {
-	const err = Object.assign(new Error('Not Found'), { status: 404 });
-	next(err);
+	next(new AppError('Not Found', 404, 'not_found'));
 });
 
-app.use(function (err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) {
-	const status = err.status ?? 500;
+app.use(function (err: Error, _req: Request, res: Response, _next: NextFunction) {
+	const status = err instanceof AppError ? err.status : 500;
 	res.status(status).json({ error: err.message, code: status });
 });
 
-await instanceLoader.loadInstanceChannels();
+await instanceLoader.reloadInstanceChannels();
 
 const server = app.listen(config.port, () => {
 	console.log(`[API] Listening on ${String(config.port)}`);

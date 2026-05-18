@@ -1,10 +1,11 @@
-import { request as httpRequest } from './request.js';
+import { parseJsonResponse, requestText } from './request.js';
 import { USER_AGENT, userIdRegex, elapsedFrom } from './helpers.js';
 import { config } from './config.js';
 import { instanceLoader } from './instanceLoader.js';
 import { infoService } from './infoService.js';
 import { InFlight } from './cache.js';
 import { CircuitBreaker } from './circuitBreaker.js';
+import { LookupNotFoundError } from './errors.js';
 import type { LogsResult, RequestInfo } from '../types/logs.js';
 import { InstanceStatus } from '../types/instance.js';
 import type { InstanceResult, LogsAvailabilityDate } from '../types/instance.js';
@@ -17,7 +18,7 @@ interface InstanceAccumulator {
 	list: LogsAvailabilityDate[];
 }
 
-const isNotFoundError = (e: unknown): boolean => e instanceof Error && e.message.startsWith('User not found:');
+const isNotFoundError = (error: unknown): boolean => error instanceof LookupNotFoundError;
 
 export class LogsService {
 	private readonly circuit = new CircuitBreaker({ name: 'Logs' });
@@ -56,7 +57,7 @@ export class LogsService {
 
 		let status = 200;
 		let downSites = 0;
-		let currentError: string | undefined = error;
+		let currentError: string | null = error ?? null;
 		const requestInfo: RequestInfo = {
 			channel: null,
 			user: null,
@@ -72,7 +73,7 @@ export class LogsService {
 		const channelInstancesWithLength: InstanceAccumulator[] = [];
 
 		if (forceLoad) {
-			await instanceLoader.loopLoadInstanceChannels();
+			await instanceLoader.forceReloadInstanceChannels();
 		}
 
 		const [channelResult, userResult] = await Promise.all([
@@ -286,13 +287,13 @@ export class LogsService {
 			: `https://${host}/?channel=${channel}`;
 
 		const fetchList = (): Promise<LogsAvailabilityDate[] | null> =>
-			httpRequest(`https://${apiHost}/list?${channelPath}=${channelClean}`, {
+			requestText(`https://${apiHost}/list?${channelPath}=${channelClean}`, {
 				headers: { 'User-Agent': USER_AGENT },
 				timeout: 5000,
 			})
 				.then((res) => {
 					if (res.statusCode >= 500) throw new Error(`HTTP ${String(res.statusCode)}`);
-					const data = JSON.parse(res.body) as { availableLogs?: LogsAvailabilityDate[] };
+					const data = parseJsonResponse<{ availableLogs?: LogsAvailabilityDate[] }>(res).body;
 					this.circuit.recordSuccess(host);
 					return data.availableLogs ?? [];
 				})
@@ -316,7 +317,7 @@ export class LogsService {
 		const instanceCacheKey = `${host}:${channel}:${user}`;
 
 		const fetchStatus = (): Promise<number | null> =>
-			httpRequest(`https://${apiHost}/list?${channelPath}=${channelClean}&${userPath}=${userClean}`, {
+			requestText(`https://${apiHost}/list?${channelPath}=${channelClean}&${userPath}=${userClean}`, {
 				headers: { 'User-Agent': USER_AGENT },
 				timeout: 5000,
 			})

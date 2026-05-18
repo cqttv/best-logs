@@ -7,7 +7,7 @@ function sendApiResponse(
 	res: Response,
 	status: number,
 	isPlain: boolean,
-	plainText: string | undefined,
+	plainText: string | null | undefined,
 	jsonData: unknown,
 ): void {
 	res.status(status);

@@ -1,7 +1,8 @@
-import { request as httpRequest } from './request.js';
+import { parseJsonResponse, requestText } from './request.js';
 import { USER_AGENT, userIdRegex } from './helpers.js';
 import { TTLCache, InFlight } from './cache.js';
 import { CircuitBreaker } from './circuitBreaker.js';
+import { LookupNotFoundError } from './errors.js';
 import type { UserInfo } from '../types/user.js';
 
 interface IvrUserData {
@@ -29,7 +30,7 @@ export class InfoService {
 	private readonly circuit = new CircuitBreaker({ name: 'IVR', baseBlockMs: 10_000, maxBlockMs: 5 * 60_000 });
 
 	async getInfo(user: string): Promise<UserInfo> {
-		if (this.negativeCache.has(user)) throw new Error(`User not found: ${user}`);
+		if (this.negativeCache.has(user)) throw new LookupNotFoundError(user);
 
 		const cached = this.infoCache.get(user);
 		if (cached !== undefined) return this.transform(cached);
@@ -44,7 +45,7 @@ export class InfoService {
 		const params = new URLSearchParams({ [isId ? 'id' : 'login']: user.replace('id:', '') });
 		let response;
 		try {
-			response = await httpRequest(`https://api.ivr.fi/v2/twitch/user?${params.toString()}`, {
+			response = await requestText(`https://api.ivr.fi/v2/twitch/user?${params.toString()}`, {
 				headers: { 'User-Agent': USER_AGENT },
 				timeout: 5000,
 			});
@@ -61,16 +62,16 @@ export class InfoService {
 		if (response.statusCode < 200 || response.statusCode > 299) {
 			if (response.statusCode >= 400 && response.statusCode < 500 && response.statusCode !== 429) {
 				this.negativeCache.set(user, true);
-				throw new Error(`User not found: ${user}`);
+				throw new LookupNotFoundError(user);
 			}
 			this.circuit.recordFailure(IVR_KEY);
 			throw new Error(`IVR API error: ${String(response.statusCode)}`);
 		}
-		const body = JSON.parse(response.body) as IvrUserData[];
+		const body = parseJsonResponse<IvrUserData[]>(response).body;
 		const fetched = body[0];
 		if (!fetched?.id) {
 			this.negativeCache.set(user, true);
-			throw new Error(`User not found: ${user}`);
+			throw new LookupNotFoundError(user);
 		}
 		this.circuit.recordSuccess(IVR_KEY);
 		this.infoCache.set(user, fetched);

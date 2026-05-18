@@ -24,7 +24,7 @@ export interface InstanceGroup extends InstanceSet {
 }
 
 export interface LogsResult {
-	error: string | undefined;
+	error: string | null;
 	status: number;
 	instancesInfo: InstancesInfo;
 	request: RequestInfo;
