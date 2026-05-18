@@ -149,7 +149,9 @@ export class RecentMessagesService {
 
 		if (rmWinner) {
 			const { entry, body, statusCode } = rmWinner;
-			recentMessages = (body.messages ?? []).filter((str) => !str.includes(':tmi.twitch.tv ROOMSTATE #')).slice(-limitNum);
+			recentMessages = (body.messages ?? [])
+				.filter((str) => !str.includes(':tmi.twitch.tv ROOMSTATE #'))
+				.slice(-limitNum);
 			messages = recentMessages;
 			statusMessage = body.status_message;
 			errorCode = body.error_code;
