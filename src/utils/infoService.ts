@@ -1,5 +1,7 @@
 import { request as httpRequest } from './request.js';
 import { USER_AGENT, userIdRegex } from './helpers.js';
+import { TTLCache, InFlight } from './cache.js';
+import { CircuitBreaker } from './circuitBreaker.js';
 import type { UserInfo } from '../types/user.js';
 
 interface IvrUserData {
@@ -10,65 +12,59 @@ interface IvrUserData {
 	banned: boolean;
 }
 
+const IVR_KEY = 'ivr';
+
 export class InfoService {
-	private infoCache = new Map<string, { data: IvrUserData; ts: number }>();
-	private negativeCache = new Map<string, number>();
-	private inFlight = new Map<string, Promise<UserInfo>>();
-	private readonly TTL = 60 * 60 * 1000;
-	private readonly NEGATIVE_TTL = 60_000;
-	private lastSweep = 0;
+	private readonly infoCache = new TTLCache<string, IvrUserData>({
+		ttl: 60 * 60 * 1000,
+		sweepInterval: 60_000,
+		maxSize: 100_000,
+	});
+	private readonly negativeCache = new TTLCache<string, true>({
+		ttl: 60_000,
+		sweepInterval: 60_000,
+	});
+	private readonly inFlight = new InFlight<string, UserInfo>();
+	private readonly circuit = new CircuitBreaker({ name: 'IVR', baseBlockMs: 10_000, maxBlockMs: 5 * 60_000 });
 
 	async getInfo(user: string): Promise<UserInfo> {
-		this.sweepCache();
-
-		const negTS = this.negativeCache.get(user);
-		if (negTS !== undefined && Date.now() - negTS < this.NEGATIVE_TTL) {
-			throw new Error(`User not found: ${user}`);
-		}
+		if (this.negativeCache.has(user)) throw new Error(`User not found: ${user}`);
 
 		const cached = this.infoCache.get(user);
-		if (cached && Date.now() - cached.ts < this.TTL) {
-			return this.transform(cached.data);
-		}
+		if (cached !== undefined) return this.transform(cached);
 
-		const inflight = this.inFlight.get(user);
-		if (inflight) return inflight;
+		if (this.circuit.isOpen(IVR_KEY)) throw new Error('IVR API unavailable');
 
-		const promise = this.fetch(user);
-		this.inFlight.set(user, promise);
-		void promise.finally(() => this.inFlight.delete(user));
-		return promise;
-	}
-
-	private sweepCache(): void {
-		const now = Date.now();
-		if (now - this.lastSweep < 60_000) return;
-		this.lastSweep = now;
-		for (const [key, value] of this.infoCache) {
-			if (now - value.ts >= this.TTL) this.infoCache.delete(key);
-		}
-		for (const [key, ts] of this.negativeCache) {
-			if (now - ts >= this.NEGATIVE_TTL) this.negativeCache.delete(key);
-		}
+		return this.inFlight.run(user, () => this.fetch(user));
 	}
 
 	private async fetch(user: string): Promise<UserInfo> {
 		const isId = userIdRegex.test(user);
 		const params = new URLSearchParams({ [isId ? 'id' : 'login']: user.replace('id:', '') });
-		const response = await httpRequest(`https://api.ivr.fi/v2/twitch/user?${params.toString()}`, {
-			headers: { 'User-Agent': USER_AGENT },
-			timeout: 5000,
-		});
+		let response;
+		try {
+			response = await httpRequest(`https://api.ivr.fi/v2/twitch/user?${params.toString()}`, {
+				headers: { 'User-Agent': USER_AGENT },
+				timeout: 5000,
+			});
+		} catch (error) {
+			this.circuit.recordFailure(IVR_KEY);
+			const msg = error instanceof Error ? error.message : String(error);
+			console.error(`[IVR] Request failed: ${msg}`);
+			throw error;
+		}
 		if (response.statusCode < 200 || response.statusCode > 299) {
+			this.circuit.recordFailure(IVR_KEY);
 			throw new Error(`IVR API error: ${String(response.statusCode)}`);
 		}
 		const body = JSON.parse(response.body) as IvrUserData[];
 		const fetched = body[0];
 		if (!fetched?.id) {
-			this.negativeCache.set(user, Date.now());
+			this.negativeCache.set(user, true);
 			throw new Error(`User not found: ${user}`);
 		}
-		this.infoCache.set(user, { data: fetched, ts: Date.now() });
+		this.circuit.recordSuccess(IVR_KEY);
+		this.infoCache.set(user, fetched);
 		return this.transform(fetched);
 	}
 

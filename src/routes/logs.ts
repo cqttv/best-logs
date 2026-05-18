@@ -7,8 +7,8 @@ import { logsService } from '../utils/logsService.js';
 import { USER_AGENT, formatError, formatUsername, userChanRegex } from '../utils/helpers.js';
 
 const ALLOWED_LOG_PARAMS = new Set(['limit', 'raw', 'reverse', 'json', 'jsonBasic']);
-const DATE_SEGMENT_RE = /^\d{1,4}$/;
-const NUMERIC_ID_RE = /^\d+$/;
+const DATE_SEGMENT_REGEX = /^\d{1,4}$/;
+const NUMERIC_ID_REGEX = /^\d{1,20}$/;
 const ALLOWED_CONTENT_TYPES = ['text/plain', 'application/json', 'application/octet-stream'];
 
 function sendError(res: Response, status: number, message: string): void {
@@ -16,31 +16,22 @@ function sendError(res: Response, status: number, message: string): void {
 }
 
 async function proxyToInstance(res: Response, targetUrl: string): Promise<void> {
-	const ac = new AbortController();
-	const timer = setTimeout(() => {
-		ac.abort(new DOMException('Gateway timeout', 'TimeoutError'));
-	}, 120_000);
+	const { body, statusCode, headers } = await fetchStream(targetUrl, {
+		headers: { 'User-Agent': USER_AGENT },
+		timeout: 120_000,
+	});
 
-	try {
-		const { body, statusCode, headers } = await fetchStream(targetUrl, {
-			headers: { 'User-Agent': USER_AGENT },
-			signal: ac.signal,
-		});
+	const contentType = headers['content-type'] ?? '';
+	if (!ALLOWED_CONTENT_TYPES.some((t) => contentType.startsWith(t))) {
+		sendError(res, 400, 'Invalid endpoint');
+		return;
+	}
 
-		const contentType = headers['content-type'] ?? '';
-		if (!ALLOWED_CONTENT_TYPES.some((t) => contentType.startsWith(t))) {
-			sendError(res, 400, 'Invalid endpoint');
-			return;
-		}
-
-		res.status(statusCode).contentType(contentType);
-		if (body) {
-			await pipeline(Readable.fromWeb(body), res);
-		} else {
-			res.end();
-		}
-	} finally {
-		clearTimeout(timer);
+	res.status(statusCode).contentType(contentType);
+	if (body) {
+		await pipeline(Readable.fromWeb(body), res);
+	} else {
+		res.end();
 	}
 }
 
@@ -68,12 +59,12 @@ const router = Router();
 
 router.get('/list', async (req: Request, res: Response) => {
 	const rawChannelId = req.query.channelid;
-	if (typeof rawChannelId === 'string' && rawChannelId && !NUMERIC_ID_RE.test(rawChannelId)) {
+	if (typeof rawChannelId === 'string' && rawChannelId && !NUMERIC_ID_REGEX.test(rawChannelId)) {
 		sendError(res, 400, 'Invalid channel ID: must be numeric');
 		return;
 	}
 	const rawUserId = req.query.userid;
-	if (typeof rawUserId === 'string' && rawUserId && !NUMERIC_ID_RE.test(rawUserId)) {
+	if (typeof rawUserId === 'string' && rawUserId && !NUMERIC_ID_REGEX.test(rawUserId)) {
 		sendError(res, 400, 'Invalid user ID: must be numeric');
 		return;
 	}
@@ -112,7 +103,6 @@ router.get('/list', async (req: Request, res: Response) => {
 		}
 
 		if (!userId) {
-			// Channel-only: getInstance already fetched and cached this list — return it directly.
 			res.json({ availableLogs: data.loggedData.list });
 			return;
 		}
@@ -132,7 +122,7 @@ const makeChannelLogsHandler =
 	(isById: boolean) =>
 	async (req: Request, res: Response): Promise<void> => {
 		const rawUserId = req.query.userid;
-		if (typeof rawUserId === 'string' && rawUserId && !NUMERIC_ID_RE.test(rawUserId)) {
+		if (typeof rawUserId === 'string' && rawUserId && !NUMERIC_ID_REGEX.test(rawUserId)) {
 			sendError(res, 400, 'Invalid user ID: must be numeric');
 			return;
 		}
@@ -153,7 +143,6 @@ const makeChannelLogsHandler =
 			return;
 		}
 
-		// Support /channel/:channel/user/:user/... and /channel/:channel/userid/:id/... path formats
 		let pathUser: string | null = null;
 		let dateStart = 1;
 		const userKeyword = segments[1];
@@ -169,13 +158,12 @@ const makeChannelLogsHandler =
 
 		const dateSegments = segments.slice(dateStart);
 		for (const seg of dateSegments) {
-			if (!DATE_SEGMENT_RE.test(seg)) {
+			if (!DATE_SEGMENT_REGEX.test(seg)) {
 				sendError(res, 400, 'Invalid path segment');
 				return;
 			}
 		}
 
-		// Path /user/:username takes precedence over ?user= query param
 		const user = pathUser ?? resolveUserInput(req);
 		if (user !== null && !userChanRegex.test(user)) {
 			sendError(res, 400, 'Invalid user or user ID');

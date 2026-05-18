@@ -3,7 +3,6 @@ export interface RequestOptions {
 	headers?: Record<string, string>;
 	body?: string;
 	timeout?: number;
-	signal?: AbortSignal;
 }
 
 export interface HttpResponse {
@@ -36,13 +35,13 @@ export async function request(url: string, options: RequestOptions = {}): Promis
 }
 
 export async function fetchStream(url: string, options: RequestOptions = {}): Promise<StreamResponse> {
-	const { method = 'GET', headers, body, timeout = 10_000, signal } = options;
+	const { method = 'GET', headers, body, timeout = 10_000 } = options;
 
 	const response = await fetch(url, {
 		method,
 		...(headers === undefined ? {} : { headers }),
 		body: body ?? null,
-		signal: signal ?? AbortSignal.timeout(timeout),
+		signal: AbortSignal.timeout(timeout),
 	});
 
 	return {
